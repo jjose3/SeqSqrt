@@ -1,0 +1,108 @@
+// seqSqrt.vp
+
+//; # Good Habits
+//; use strict ;                   # Use a strict interpretation
+//; use warnings FATAL=>qw(all);   # Turn warnings into errors
+//; use diagnostics ;              # Print helpful info, for errors
+
+//; # Parameters
+//; my $bW = parameter( name=>"bitWidth", val=>8 , doc=>"width of the input");
+
+module `mname` (
+	input  logic [`$bW-1`:0] a,
+	input  logic             a_valid,
+	output logic             a_ready,
+
+	input  logic             clk,
+	input  logic             rst,
+
+	output logic [`($bW/2)-1`:0] r,
+	output logic             r_valid
+	);
+
+	localparam IDLE = 2'b00;
+	localparam BUSY = 2'b01;
+	localparam DONE = 2'b10;
+
+	logic [`$bW-1`:0] a_tmp, a_tmp_nxt;
+	logic [`$bW`:0] sqnum_nxt,sqnum;
+	logic [`($bW/2)`:0] sqdiff_nxt,sqdiff;
+	logic [`($bW/2)-1`:0] r_tmp, r_tmp_nxt;
+	logic start;
+	logic [1:0] state;
+	logic [1:0] next_state;
+
+
+///// STATE MACHINE 
+
+	always_comb begin
+		unique case(state)
+			IDLE:	begin
+					if(a_valid) begin
+						next_state = BUSY; //ready is already high
+					end else begin
+						next_state = IDLE; //Wait for valid signal
+					end
+		      		end
+			BUSY: 		begin
+					if(sqnum > a_tmp) begin
+						next_state = DONE; //calculating squareroot finished when sqnum crosses the number	
+					end else begin
+						next_state = BUSY; //Keep calculating
+					end
+		      		end
+			DONE: 		begin
+					next_state = IDLE; //State to capture the root and advertise it
+		      		end
+			default : next_state = IDLE;
+		endcase
+	end
+
+////// END OF STATE MACHINE 
+
+//control signals
+	assign start = a_ready && a_valid ;
+	assign a_ready = (state == IDLE); //ready is asserted in IDLE state
+	assign r_valid = (state == DONE) ; //valid is asserted in DONE state
+
+// Capture the number when ready and valid signals are asserted
+	assign a_tmp_nxt = start ? a : a_tmp ;
+	
+// Starts calculating squareroot when the state machine is in BUSY state, sqnum is incremented by sqdiff and sqdiff is incremented by 2
+// sqnum = sqnum + sqdiff, starts with 1 for new calculation [1, 4, 9, 16, 25, ....]
+// sqdiff = sqdiff + 2, starts with 3 for new calculation [3, 5, 7, 9, 11, ....]
+	assign sqnum_nxt = (state == BUSY) ? sqnum + {`$bW/2`'d0,sqdiff} : `$bW`'d1;
+	assign sqdiff_nxt = (state == BUSY) ? sqdiff + 2 : `$bW`'d3;
+
+// root = (sqdiff/2 - 1), unless the number is zero root is always 0
+	assign r_tmp_nxt = (|a_tmp) ? (sqdiff[`($bW/2)`:1] - 1) : `$bW/2`'d0;
+// Capture root when r_valid is asserted
+	assign r = r_valid ? r_tmp : `$bW/2`'d0; 
+
+	
+
+/////// Flip Flop instances
+
+	//; for( my $i = 0 ; $i < $bW ; $i++ ){
+	//;  my $dff = generate_base( "dff" , "D_FLIP_FLOP_A".$i);
+	`$dff->instantiate()` ( .din(a_tmp_nxt[`$i`]), .clk, .rst, .q(a_tmp[`$i`]) );
+	//; }
+	//; for( my $i = 0 ; $i < ($bW/2)+1 ; $i++ ){
+	//;  my $dff = generate_base( "dff" , "D_FLIP_FLOP_SQDIFF".$i);
+	`$dff->instantiate()` ( .din(sqdiff_nxt[`$i`]), .clk, .rst, .q(sqdiff[`$i`]) );
+	//; }
+	//; for( my $i = 0 ; $i < $bW+1 ; $i++ ){
+	//;  my $dff = generate_base( "dff" , "D_FLIP_FLOP_SQNUM".$i);
+	`$dff->instantiate()` ( .din(sqnum_nxt[`$i`]), .clk, .rst, .q(sqnum[`$i`]) );
+	//; }
+	//; for( my $i = 0 ; $i < ($bW/2) ; $i++ ){
+	//;  my $dff = generate_base( "dff" , "D_FLIP_FLOP_RTMP".$i);
+	`$dff->instantiate()` ( .din(r_tmp_nxt[`$i`]), .clk, .rst, .q(r_tmp[`$i`]) );
+	//; }
+	//; for( my $i = 0 ; $i < 2 ; $i++ ){
+	//;  my $dffstate = generate_base( "dff" , "D_FLIP_FLOP_STATE".$i);
+	`$dffstate->instantiate()` ( .din(next_state[`$i`]), .clk, .rst, .q(state[`$i`]) );
+	//; }
+
+
+endmodule
