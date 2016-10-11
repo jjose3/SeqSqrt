@@ -1,0 +1,110 @@
+// seqRoot.vp
+
+//; # Good Habits
+//; use strict ;                   # Use a strict interpretation
+//; use warnings FATAL=>qw(all);   # Turn warnings into errors
+//; use diagnostics ;              # Print helpful info, for errors
+
+//; # Parameters
+//; my $bW = parameter( name=>"SqrBitWidth", val=>16, doc=>"Width of input");
+//; my $iW = parameter( name=>"RootIntWidth", val=>8, doc=>"Width of input");
+//; my $fW = parameter( name=>"RootFracWidth", val=>8, doc=>"Width of input");
+//; my $oW = $iW + $fW;
+
+module `mname` (
+	input  logic [`$bW-1`:0] s,
+	input  logic             s_vld,
+	output logic             s_rdy,
+
+	input  logic             clk,
+	input  logic             rst,
+
+	output logic [`$oW-1`:0] r,
+	output logic             r_vld
+	);
+
+	localparam IDLE = 2'b00;
+	localparam BUSY = 2'b01;
+	localparam DONE = 2'b10;
+
+	logic [`$bW-1`:0] s_tmp, s_tmp_nxt;
+	logic [`$bW`:0] new_guess, new_guess_nxt, num_div_guess, guess_sum_div, guess_av_num;
+	logic start;
+	logic seqEn;
+	logic [2:0] cnt, cnt_nxt;
+	logic [1:0] state;
+	logic [1:0] next_state;
+
+
+///// STATE MACHINE 
+
+	always_comb begin
+		unique case(state)
+			IDLE:	begin
+					if(s_vld) begin
+						next_state = BUSY; //ready is already high
+					end else begin
+						next_state = IDLE; //Wait for valid signal
+					end
+		      		end
+			BUSY: 		begin
+					if(cnt == 3'd6) begin
+						next_state = DONE;	
+					end else begin
+						next_state = BUSY; //Keep calculating
+					end
+		      		end
+			DONE: 		begin
+					next_state = IDLE; //State to capture the root and advertise it
+		      		end
+			default : next_state = IDLE;
+		endcase
+	end
+
+////// END OF STATE MACHINE 
+
+//control signals
+	assign start = s_rdy && s_vld ;
+	assign s_rdy = (state == IDLE); //ready is asserted in IDLE state
+	assign seqEn = (state == BUSY); //ready is asserted in BUSY state
+	assign r_vld = (state == DONE) ; //valid is asserted in DONE state
+	assign cnt_nxt = (state == IDLE) ? 3'd0 : cnt + 1;
+// Capture the number when ready and valid signals are asserted
+	assign s_tmp_nxt = start ? s : s_tmp ;
+	
+  	//;  my $div = generate_base( "frac_div" , "DIVIDER");
+	`$div->instantiate()` (.dividend({s_tmp_nxt,1'b0}), .divisor(new_guess), .result(num_div_guess), .seqEn(seqEn));
+  
+  always_comb begin
+    if(seqEn) begin
+  		guess_sum_div = new_guess + num_div_guess;
+  		guess_av_num = guess_sum_div >> 1;
+  		new_guess_nxt = guess_av_num;
+    end else begin
+		new_guess_nxt = {s_tmp_nxt,1'b0}/2;
+	end
+  end
+  assign r = r_vld ? new_guess[`$bW`:1] : `$oW`'d0;
+
+	
+
+/////// Flip Flop instances
+	//; for( my $i = 0 ; $i < 3 ; $i++ ){
+	//;  my $dff = generate_base( "dff" , "D_FLIP_FLOP_CNT".$i);
+	`$dff->instantiate()` ( .din(cnt_nxt[`$i`]), .clk, .rst, .q(cnt[`$i`]) );
+	//; }
+	//; for( my $i = 0 ; $i < $bW ; $i++ ){
+	//;  my $dff = generate_base( "dff" , "D_FLIP_FLOP_S".$i);
+	`$dff->instantiate()` ( .din(s_tmp_nxt[`$i`]), .clk, .rst, .q(s_tmp[`$i`]) );
+	//; }
+	//; for( my $i = 0 ; $i < $bW+1 ; $i++ ){
+	//;  my $dff = generate_base( "dff" , "D_FLIP_FLOP_NEWGUESS".$i);
+	`$dff->instantiate()` ( .din(new_guess_nxt[`$i`]), .clk, .rst, .q(new_guess[`$i`]));
+	//; }
+	//; for( my $i = 0 ; $i < 2 ; $i++ ){
+	//;  my $dffstate = generate_base( "dff" , "D_FLIP_FLOP_STATE".$i);
+	`$dffstate->instantiate()` ( .din(next_state[`$i`]), .clk, .rst, .q(state[`$i`]) );
+	//; }
+
+
+endmodule

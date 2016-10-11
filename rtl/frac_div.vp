@@ -1,0 +1,34 @@
+// frac_div.vp
+
+//; # Good Habits
+//; use strict ;                   # Use a strict interpretation
+//; use warnings FATAL=>qw(all);   # Turn warnings into errors
+//; use diagnostics ;              # Print helpful info, for errors
+
+//; # Parameters
+//; my $parent = $self->get_parent();
+//; my $bW = $parent->get_param("SqrBitWidth");
+//; my $iW = $parent->get_param("RootIntWidth");
+//; my $fW = $parent->get_param("RootFracWidth");
+//; my $oW = $iW + $fW;
+module `mname` (  
+
+  input logic [`$bW`:0] dividend,
+  input logic [`$bW`:0] divisor,
+  input logic seqEn,
+  output logic [`$bW`:0] result);
+  
+  logic [`($bW+$fW)`:0] rem;
+  
+  always_comb begin
+    if(seqEn && (dividend != `$bW+1`'d0)) begin
+      result[`$bW`:`$fW+1`] = dividend / divisor;
+      rem = (dividend % divisor) << `$fW+1`;
+      result[`$fW`:0] = rem/divisor;
+    end else begin
+		result[`$bW`:0] = `$bW+1`'d0;
+	end
+  end
+
+  
+endmodule: `mname`

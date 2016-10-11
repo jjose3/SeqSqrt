@@ -1,0 +1,117 @@
+//top_seqRoot.vp
+
+
+module `mname` ();
+
+//; my $dut = generate_base("seqRoot", "my_seqRoot");
+//; my $bW = $dut->get_param("SqrBitWidth");
+//; my $iW = $dut->get_param("RootIntWidth");
+//; my $fW = $dut->get_param("RootFracWidth");
+//; my $oW = $iW + $fW;
+
+
+//; my $gb = generate("generic_bench", "BASIC_BENCH");
+
+//; my $pc = generate("cycle_counter", "PERF_COUNT", CycleName=>"multRate_cyc");
+//; my $ec = generate("cycle_counter", "ERROR_COUNT", CountName=>"mult_err_cnt");
+
+    logic [`$bW-1`:0] s;
+    logic [`$bW-1`:0] last_s;
+	real root;
+    logic             s_vld;
+    logic             s_rdy;
+
+    logic             clk;
+    logic             rst;
+
+    logic [`($oW)-1`:0] r;
+    logic [`($oW)-1`:0] actroot;
+    logic             r_vld;
+    logic 			  perf ; 
+
+    logic             r_err ;
+
+    logic             triggerStart;
+    logic             triggerStop;
+    int               seed;
+    int               clk_period ;
+    real real_s, frac, s_frac, s_int, sqr;
+
+    // Instantiate the design under test and basic bench
+    `$dut->instantiate()` (.*);
+    `$gb->instantiate()`  (.*);
+    `$pc->instantiate()`  (.triggerStart(perf), .triggerStop(triggerStop), .increment(r_vld), .clk(clk), .rst(rst) );
+    `$ec->instantiate()`  (.triggerStart(triggerStart), .triggerStop(triggerStop), .increment(r_err), .clk(clk), .rst(rst) );
+   // TODO event counter
+
+    // Simulation Narrative
+    initial begin
+    	triggerStart  = 1'b0 ;
+    	triggerStop = 1'b0 ;
+    	perf = 1'b0 ; 
+    	//@(negedge rst);
+    	repeat(10) @(posedge clk );
+    	triggerStart  = 1'b1 ;
+    	repeat(100000) @(posedge r_vld );  //Wait 100k r_valids
+    	perf = 1'b1 ;
+    	repeat(100000) @(posedge r_vld);  //Wait 100k r_valids
+    	triggerStop = 1'b1 ;
+    	repeat(10) @(posedge clk);
+    	$finish();
+    end
+
+    // Frontend Driver
+    always @( negedge clk ) begin
+    	// Test bench driven signal start at negedg
+    	//   so it is obv they came from the bench
+	if( triggerStart && ~triggerStop) begin
+    	//s =  16'b0111100100010110;
+	s = $random();
+    	s_vld = perf ? 1'b1 : $random() ; // TODO in event count mode it is always valid
+	//$display("new guess = %b", my_seqRoot.new_guess);
+
+    	if( s_vld && s_rdy ) begin
+    		real_s = s ;
+		s_int = s[15:8];
+		s_frac = s[7]*0.5 + s[6]*0.25 + s[5]*0.125 + s[4]*0.0625 + s[3]*0.03125 + s[2]*0.015625 + s[1]*0.0078125 + s[0]*0.00390625;
+		sqr = (real_s**0.5)/16;
+        	actroot = realtobin(sqr);
+		$display(" time %t : Calculating square root of %f", $time, s_int + s_frac);
+    	end 
+	end
+    end
+
+    // Verification
+    always @( posedge clk ) begin
+    	#1
+    	// Wait one tick to see what was flopped
+        r_err = 1'b0 ;
+    	if( r_vld && triggerStart && ~triggerStop) begin
+		frac = r[7]*0.5 + r[6]*0.25 + r[5]*0.125 + r[4]*0.0625 + r[3]*0.03125 + r[2]*0.015625 + r[1]*0.0078125 + r[0]*0.00390625;
+    		$display("time %t : num = %f, root = %f, in binary = %b.%b, actual = %f, %b.%b", $time, s_int + s_frac, r[15:8] + frac, r[15:8], r[7:0], sqr, actroot[15:8], actroot[7:0]);
+    		assert( r == actroot) else $display("%t: Error - %b != %b", $time(), r, actroot);
+            r_err = ( r != actroot) ;
+    	end
+
+    end
+
+  function [15:0] realtobin;
+    input real sqr;
+    int dec;
+    int cnt;
+    real sub;
+    dec = $rtoi(sqr);
+    //dec = ((sqr - $rtoi(sqr)) > 0.9999999) ? $rtoi(sqr)+1 : $rtoi(sqr);
+    //sub = ((sqr - dec) > 0.9999999) ? 0.0 : sqr - dec;
+    sub = sqr - dec;
+	cnt = 0;
+    while(cnt < 8) begin
+      realtobin[7-cnt] = $rtoi(sub*2);
+      sub = (sub*2) - $rtoi(sub*2);
+      cnt = cnt+1;
+    end
+    realtobin[15:8] = dec;
+    
+  endfunction
+
+endmodule 
